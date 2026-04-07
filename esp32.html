@@ -1,0 +1,221 @@
+/*
+ * ╔══════════════════════════════════════════════════════════╗
+ * ║      ESP32 LED Control — Firebase REST API Version       ║
+ * ║      NO external Firebase library needed!                ║
+ * ║      Uses only built-in WiFi + HTTPClient                ║
+ * ╚══════════════════════════════════════════════════════════╝
+ *
+ * REQUIRED LIBRARIES:
+ *   ✅ WiFi.h        — built-in with ESP32 board package
+ *   ✅ HTTPClient.h  — built-in with ESP32 board package
+ *   ✅ ArduinoJson   — install ONLY this one (by Benoit Blanchon v6.x)
+ *
+ * BOARD: Tools → Board → "ESP32 Dev Module"
+ */
+
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+// ─── ⚙️  CHANGE THESE ─────────────────────────────────────
+#define WIFI_SSID      "YOTC-FB546F"       // <- your WiFi name
+#define WIFI_PASSWORD  "DITIRJAY152005"   // <- your WiFi password
+// ──────────────────────────────────────────────────────────
+
+// ─── Firebase Config ───────────────────────────────────────
+const String FIREBASE_HOST = "led-control-6c33d-default-rtdb.asia-southeast1.firebasedatabase.app";
+const String FIREBASE_AUTH = "AIzaSyBV5tKBV-3Tne3LNbRdVe-2cXp5dAbjeIE";
+
+// ─── Hardware ──────────────────────────────────────────────
+#define LED_PIN 2
+
+// ─── Timing ────────────────────────────────────────────────
+unsigned long lastPoll      = 0;
+unsigned long lastBlink     = 0;
+unsigned long lastHeartbeat = 0;
+unsigned long lastStateSync = 0;
+
+const unsigned long POLL_INTERVAL      = 1000;
+const unsigned long HEARTBEAT_INTERVAL = 5000;
+const unsigned long STATE_SYNC_INTERVAL = 100;  // Sync LED state every 100ms for smooth animation
+
+// ─── State ─────────────────────────────────────────────────
+String currentMode   = "LOW";
+bool   systemOn      = true;
+bool   ledState      = false;
+int    blinkInterval = 1000;
+
+// ──────────────────────────────────────────────────────────
+String firebaseURL(String path) {
+  return "https://" + FIREBASE_HOST + path + ".json?auth=" + FIREBASE_AUTH;
+}
+
+String firebaseGet(String path) {
+  if (WiFi.status() != WL_CONNECTED) return "";
+  HTTPClient http;
+  http.begin(firebaseURL(path));
+  http.setTimeout(5000);
+  int code = http.GET();
+  String payload = "";
+  if (code == 200) {
+    payload = http.getString();
+  } else {
+    Serial.printf("[HTTP] GET failed, code: %d\n", code);
+  }
+  http.end();
+  return payload;
+}
+
+bool firebasePut(String path, String jsonValue) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  HTTPClient http;
+  http.begin(firebaseURL(path));
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(5000);
+  int code = http.PUT(jsonValue);
+  http.end();
+  return (code == 200);
+}
+
+int modeToInterval(String mode) {
+  if (mode == "HIGH")   return 200;
+  if (mode == "MEDIUM") return 500;
+  return 1000;
+}
+
+void connectWiFi() {
+  Serial.print("\n[WiFi] Connecting");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n[WiFi] Connected!");
+    Serial.print("[WiFi] IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n[WiFi] Failed! Check SSID/password. Restarting...");
+    delay(3000);
+    ESP.restart();
+  }
+}
+
+void readFirebase() {
+  String modeRaw = firebaseGet("/led/mode");
+  if (modeRaw.length() > 0) {
+    modeRaw.replace("\"", "");
+    modeRaw.trim();
+    modeRaw.toUpperCase();
+    if (modeRaw == "LOW" || modeRaw == "MEDIUM" || modeRaw == "HIGH") {
+      if (modeRaw != currentMode) {
+        currentMode   = modeRaw;
+        blinkInterval = modeToInterval(currentMode);
+        Serial.printf("[Firebase] Mode -> %s (%dms)\n", currentMode.c_str(), blinkInterval);
+      }
+    }
+  }
+
+  String onRaw = firebaseGet("/led/on");
+  if (onRaw.length() > 0) {
+    onRaw.trim();
+    bool newState = (onRaw == "true");
+    if (newState != systemOn) {
+      systemOn = newState;
+      Serial.printf("[Firebase] System ON = %s\n", systemOn ? "true" : "false");
+      if (!systemOn) digitalWrite(LED_PIN, LOW);
+    }
+  }
+}
+
+void sendHeartbeat() {
+  unsigned long ts = millis();
+  bool ok = firebasePut("/led/heartbeat", String(ts));
+  if (ok) Serial.printf("[Firebase] Heartbeat sent (%lu ms)\n", ts);
+}
+
+// NEW FUNCTION: Send LED state to Firebase for dashboard sync
+void syncLedState() {
+  if (WiFi.status() == WL_CONNECTED) {
+    String stateValue = ledState ? "true" : "false";
+    bool ok = firebasePut("/led/state", stateValue);
+    if (ok) {
+      // Optional: Uncomment for debugging (can be noisy)
+      // Serial.printf("[Sync] LED state: %s\n", stateValue.c_str());
+    }
+  }
+}
+
+void handleLED() {
+  if (!systemOn) {
+    digitalWrite(LED_PIN, LOW);
+    ledState = false;
+    return;
+  }
+  if (millis() - lastBlink >= (unsigned long)blinkInterval) {
+    lastBlink = millis();
+    ledState  = !ledState;
+    digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+    
+    // CRITICAL: Send LED state to Firebase immediately when it changes
+    // This ensures dashboard stays perfectly synced
+    syncLedState();
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n=== ESP32 LED Firebase Control ===");
+  Serial.println("=== REST API - No Extra Libs!  ===");
+  Serial.println("=== Dashboard Sync Enabled        ===");
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  connectWiFi();
+
+  Serial.println("[Firebase] Writing initial state...");
+  firebasePut("/led/mode",      "\"LOW\"");
+  firebasePut("/led/on",        "true");
+  firebasePut("/led/heartbeat", "0");
+  firebasePut("/led/state",     "false");  // Initialize LED state
+
+  Serial.println("[System] Ready! Polling Firebase every 1 second.\n");
+  Serial.println("[Sync] Dashboard LED sync is ACTIVE\n");
+}
+
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WiFi] Reconnecting...");
+    connectWiFi();
+  }
+
+  if (millis() - lastPoll >= POLL_INTERVAL) {
+    lastPoll = millis();
+    readFirebase();
+  }
+
+  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL) {
+    lastHeartbeat = millis();
+    sendHeartbeat();
+  }
+
+  // Optional: Periodic state sync as backup (every 100ms)
+  // This ensures dashboard gets updates even if something goes wrong
+  if (millis() - lastStateSync >= STATE_SYNC_INTERVAL) {
+    lastStateSync = millis();
+    // Only sync if system is on and we haven't just synced in handleLED
+    // This is a backup sync for reliability
+    static bool lastSyncedState = false;
+    if (systemOn && ledState != lastSyncedState) {
+      lastSyncedState = ledState;
+      syncLedState();
+    }
+  }
+
+  handleLED();
+}
