@@ -1,611 +1,885 @@
-
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>NeoLED | ESP32 Industrial Control Console</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-<script type="module">
-  // Firebase SDK v9
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>ESP32 LED Controller </title>
+  
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyBV5tKBV-3Tne3LNbRdVe-2cXp5dAbjeIE",
-    databaseURL: "https://led-control-6c33d-default-rtdb.asia-southeast1.firebasedatabase.app/",
-    projectId: "led-control-6c33d",
-  };
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #0f0c29 0%, #1a1a2e 50%, #16213e 100%);
+      min-height: 100vh;
+      color: #fff;
+      position: relative;
+      overflow-x: hidden;
+    }
 
-  // System State
+    body::before {
+      content: '';
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.4;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .orb-1 { width: 400px; height: 400px; background: #3b82f6; top: -200px; left: -100px; }
+    .orb-2 { width: 500px; height: 500px; background: #8b5cf6; bottom: -250px; right: -150px; }
+    .orb-3 { width: 300px; height: 300px; background: #06b6d4; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.15; }
+
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 2rem;
+      position: relative;
+      z-index: 2;
+    }
+
+    .glass-card {
+      background: rgba(15, 25, 45, 0.6);
+      backdrop-filter: blur(20px);
+      border-radius: 2rem;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.3);
+      transition: all 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+    }
+
+    .glass-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(59, 130, 246, 0.3);
+      box-shadow: 0 30px 50px -15px rgba(59, 130, 246, 0.2);
+    }
+
+    .led-wrapper {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 1.5rem 0;
+    }
+
+    .led {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #1e293b, #0f172a);
+      box-shadow: inset 0 5px 15px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.3);
+      transition: all 0.05s linear;
+      position: relative;
+    }
+
+    .led.active {
+      background: radial-gradient(circle at 35% 35%, #3b82f6, #1e3a8a);
+      box-shadow: 0 0 40px rgba(59, 130, 246, 0.6), 0 0 80px rgba(59, 130, 246, 0.3), inset 0 2px 8px rgba(255, 255, 255, 0.3);
+    }
+
+    .led-ring {
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      border: 2px solid rgba(59, 130, 246, 0.4);
+      top: -10px;
+      left: -10px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .led.active + .led-ring {
+      opacity: 1;
+      animation: ripple 2s infinite;
+    }
+
+    @keyframes ripple {
+      0% { transform: scale(0.9); opacity: 0.5; }
+      70% { transform: scale(1.2); opacity: 0; }
+      100% { transform: scale(0.9); opacity: 0; }
+    }
+
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .mode-btn {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 1.25rem;
+      padding: 1.25rem 0.75rem;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mode-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.2), transparent);
+      transition: left 0.5s;
+    }
+
+    .mode-btn:hover::before {
+      left: 100%;
+    }
+
+    .mode-btn:hover {
+      transform: translateY(-5px);
+      border-color: rgba(59, 130, 246, 0.5);
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .mode-btn.active {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      border-color: #60a5fa;
+      box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.4);
+    }
+
+    .mode-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+
+    .mode-name {
+      font-weight: 700;
+      font-size: 1rem;
+      letter-spacing: 0.5px;
+    }
+
+    .mode-speed {
+      font-size: 0.7rem;
+      opacity: 0.7;
+      margin-top: 0.25rem;
+      font-family: monospace;
+    }
+
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(30, 41, 59, 0.5);
+      border-radius: 2rem;
+      padding: 0.75rem 1.25rem;
+      margin: 1rem 0;
+    }
+
+    .toggle-label {
+      font-weight: 500;
+      font-size: 0.9rem;
+      color: #94a3b8;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 60px;
+      height: 30px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #334155;
+      transition: 0.3s;
+      border-radius: 30px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 24px;
+      width: 24px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    input:checked + .toggle-slider {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(30px);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: rgba(30, 41, 59, 0.4);
+      border-radius: 1.25rem;
+      padding: 1rem;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      transition: all 0.3s;
+    }
+
+    .stat-card:hover {
+      background: rgba(30, 41, 59, 0.6);
+      transform: scale(1.02);
+    }
+
+    .stat-icon {
+      font-size: 1.5rem;
+      color: #3b82f6;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-family: monospace;
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      color: #94a3b8;
+      margin-top: 0.25rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .conn-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1.25rem;
+      background: rgba(30, 41, 59, 0.6);
+      backdrop-filter: blur(10px);
+      border-radius: 2rem;
+      font-size: 0.8rem;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .conn-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    .conn-dot.online {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+
+    .conn-dot.offline {
+      background: #ef4444;
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+
+    .log-container {
+      max-height: 250px;
+      overflow-y: auto;
+      padding: 0.5rem;
+    }
+
+    .log-entry {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.6rem 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.75rem;
+      transition: all 0.2s;
+    }
+
+    .log-entry:hover {
+      background: rgba(59, 130, 246, 0.1);
+      border-radius: 0.5rem;
+    }
+
+    .log-time {
+      font-family: monospace;
+      color: #60a5fa;
+      min-width: 70px;
+    }
+
+    .log-message {
+      color: #cbd5e1;
+      flex: 1;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(30, 41, 59, 0.3);
+      border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #3b82f6;
+      border-radius: 10px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .logo-text {
+      font-size: 1.5rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, #94a3b8);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .logo-sub {
+      font-size: 0.7rem;
+      color: #64748b;
+    }
+
+    .mode-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      border-radius: 2rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-left: 0.5rem;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-in {
+      animation: fadeInUp 0.6s ease forwards;
+    }
+
+    .delay-1 { animation-delay: 0.1s; opacity: 0; animation-fill-mode: forwards; }
+    .delay-2 { animation-delay: 0.2s; opacity: 0; animation-fill-mode: forwards; }
+    .delay-3 { animation-delay: 0.3s; opacity: 0; animation-fill-mode: forwards; }
+
+    @media (max-width: 768px) {
+      .container { padding: 1rem; }
+      .led { width: 120px; height: 120px; }
+      .led-ring { width: 140px; height: 140px; top: -10px; left: -10px; }
+      .mode-icon { font-size: 1.5rem; }
+      .mode-name { font-size: 0.85rem; }
+      .stat-value { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="container">
+  <div class="header animate-in">
+    <div class="logo">
+      <div class="logo-icon">
+        <i class="fas fa-microchip"></i>
+      </div>
+      <div>
+        <div class="logo-text"></div>
+        <div class="logo-sub">ESP32 LED Controller · Real-time Sync</div>
+      </div>
+    </div>
+    <div class="conn-badge" id="conn-badge">
+      <span class="conn-dot offline" id="conn-dot"></span>
+      <span id="conn-text">Connecting...</span>
+      <button onclick="manualSync()" style="background: none; border: none; color: #60a5fa; cursor: pointer; margin-left: 0.5rem;">
+        <i class="fas fa-sync-alt"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+    
+    <div class="glass-card" style="padding: 2rem; text-align: center;">
+      <h3 style="font-weight: 600; margin-bottom: 1rem; color: #e2e8f0;">
+        <i class="fas fa-lightbulb" style="color: #3b82f6; margin-right: 0.5rem;"></i>
+        ESP32 LED Status
+      </h3>
+      
+      <div class="led-wrapper">
+        <div id="led" class="led"></div>
+        <div class="led-ring"></div>
+      </div>
+
+      <div class="toggle-container">
+        <span class="toggle-label">
+          <i class="fas fa-power-off" style="margin-right: 0.5rem;"></i>
+          System Power
+        </span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="power-toggle" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <span style="color: #94a3b8; font-size: 0.75rem;">Current Mode</span>
+        <div style="margin-top: 0.25rem;">
+          <span id="current-mode" style="font-size: 1.25rem; font-weight: 700;">LOW</span>
+          <span class="mode-badge" id="current-speed">1.0 Hz</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 1rem; font-size: 0.7rem; color: #64748b;">
+        <i class="far fa-clock"></i> Last heartbeat: <span id="heartbeat-time">---</span>
+      </div>
+      
+      <div style="margin-top: 0.5rem; font-size: 0.7rem; color: #3b82f6;">
+        <i class="fas fa-sync-alt"></i> Dashboard LED syncs with ESP32
+      </div>
+    </div>
+
+    <div class="glass-card" style="padding: 2rem;">
+      <h3 style="font-weight: 600; margin-bottom: 1.5rem; color: #e2e8f0;">
+        <i class="fas fa-waveform" style="color: #3b82f6; margin-right: 0.5rem;"></i>
+        Blink Frequency
+      </h3>
+
+      <div class="mode-grid">
+        <div id="mode-low" class="mode-btn active" onclick="setMode('LOW')">
+          <i class="fas fa-tachometer-alt mode-icon"></i>
+          <div class="mode-name">LOW</div>
+          <div class="mode-speed">1.0 Hz · Slow</div>
+        </div>
+        <div id="mode-medium" class="mode-btn" onclick="setMode('MEDIUM')">
+          <i class="fas fa-chart-line mode-icon"></i>
+          <div class="mode-name">MEDIUM</div>
+          <div class="mode-speed">2.0 Hz · Normal</div>
+        </div>
+        <div id="mode-high" class="mode-btn" onclick="setMode('HIGH')">
+          <i class="fas fa-bolt mode-icon"></i>
+          <div class="mode-name">HIGH</div>
+          <div class="mode-speed">5.0 Hz · Fast</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-radius: 1rem; text-align: center;">
+        <i class="fas fa-info-circle" style="color: #3b82f6; margin-right: 0.5rem;"></i>
+        <span id="mode-description" style="font-size: 0.8rem; color: #94a3b8;">Low speed: LED blinks once per second</span>
+      </div>
+    </div>
+
+    <div class="glass-card" style="padding: 2rem;">
+      <h3 style="font-weight: 600; margin-bottom: 1.5rem; color: #e2e8f0;">
+        <i class="fas fa-chart-simple" style="color: #3b82f6; margin-right: 0.5rem;"></i>
+        Analytics
+      </h3>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon"><i class="fas fa-database"></i></div>
+          <div class="stat-value" id="stat-reads">0</div>
+          <div class="stat-label">API Calls</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon"><i class="fas fa-upload"></i></div>
+          <div class="stat-value" id="stat-writes">0</div>
+          <div class="stat-label">Commands Sent</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <span style="font-size: 0.85rem; font-weight: 500;">
+            <i class="fas fa-terminal" style="color: #3b82f6; margin-right: 0.5rem;"></i>
+            Event Log
+          </span>
+          <button onclick="clearLog()" style="background: rgba(255,255,255,0.05); border: none; padding: 0.25rem 0.75rem; border-radius: 0.5rem; color: #94a3b8; cursor: pointer; font-size: 0.7rem;">
+            <i class="fas fa-trash-alt"></i> Clear
+          </button>
+        </div>
+        <div id="event-log" class="log-container">
+          <div class="log-entry">
+            <span class="log-time">--:--:--</span>
+            <span class="log-message">Initializing LUMINA controller...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer style="text-align: center; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.05); font-size: 0.7rem; color: #475569;">
+    <i class="fas fa-microchip"></i> ESP32 LED Controller · Firebase REST API · Dashboard LED syncs with ESP32 in real-time
+  </footer>
+</div>
+
+<script>
+  // Firebase REST API configuration (matching your ESP32 code)
+  const FIREBASE_HOST = "led-control-6c33d-default-rtdb.asia-southeast1.firebasedatabase.app";
+  const FIREBASE_AUTH = "AIzaSyBV5tKBV-3Tne3LNbRdVe-2cXp5dAbjeIE";
+  
+  // State variables
   let currentMode = "LOW";
   let systemOn = true;
   let lastHeartbeat = 0;
   let esp32Online = false;
-  let blinkTimer = null;
-  let blinkState = false;
-  let dbReadCount = 1247;
-  let writeCount = 89;
-  let uptimePercent = 99.2;
+  let apiCallCount = 0;
+  let commandCount = 0;
   
-  const BLINK_SPEEDS = { LOW: 1000, MEDIUM: 500, HIGH: 200 };
-  const $ = id => document.getElementById(id);
-
-  // Industrial-style log with precise timestamps
-  function addActivityLog(message, type = 'info') {
-    const logContainer = $("activity-log");
-    if (!logContainer) return;
-    const now = new Date();
-    const isoTime = now.toISOString().slice(11, 19);
-    const ms = now.getMilliseconds().toString().padStart(3, '0');
-    const timestamp = `${isoTime}.${ms}`;
-    
-    let icon = "fa-microchip";
-    let bgColor = "bg-indigo-500/20";
-    let textColor = "text-indigo-300";
-    if (type === 'mode') { icon = "fa-waveform"; bgColor = "bg-amber-500/20"; textColor = "text-amber-400"; }
-    if (type === 'power') { icon = "fa-power-off"; bgColor = "bg-emerald-500/20"; textColor = "text-emerald-400"; }
-    if (type === 'connection') { icon = "fa-wifi"; bgColor = "bg-cyan-500/20"; textColor = "text-cyan-400"; }
-    if (type === 'error') { icon = "fa-triangle-exclamation"; bgColor = "bg-red-500/20"; textColor = "text-red-400"; }
-    
-    const entry = document.createElement("div");
-    entry.className = `log-entry group transition-all duration-150 hover:bg-white/5 rounded-md px-2 py-1.5`;
-    entry.innerHTML = `
-      <div class="flex items-center gap-2 text-xs font-mono">
-        <span class="text-cyan-400/70 w-20 flex-shrink-0">[${timestamp}]</span>
-        <i class="fas ${icon} ${textColor} text-[10px] w-4"></i>
-        <span class="flex-1 text-gray-300">${escapeHtml(message)}</span>
-      </div>
-    `;
-    logContainer.prepend(entry);
-    while (logContainer.children.length > 50) logContainer.removeChild(logContainer.lastChild);
-  }
+  // Track actual LED state from ESP32
+  let actualLedState = false;
   
-  function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
-
-  // Firebase Actions
-  async function setMode(mode) {
-    if (!systemOn && mode !== currentMode) { addActivityLog(`SYSTEM LOCK: Mode change rejected (power off)`, 'error'); return; }
-    if (mode === currentMode) return;
-    currentMode = mode;
-    await set(ref(db, "/led/mode"), mode);
-    writeCount++;
-    updateStatsDisplay();
-    addActivityLog(`MODE TRANSITION → ${mode} | Interval: ${BLINK_SPEEDS[mode]}ms`, 'mode');
-    updateModeUI();
-  }
-
-  async function toggleSystem() {
-    systemOn = !systemOn;
-    await set(ref(db, "/led/on"), systemOn);
-    writeCount++;
-    updateStatsDisplay();
-    addActivityLog(systemOn ? `POWER CIRCUIT CLOSED · LED driver active` : `POWER CIRCUIT OPEN · LED driver halted`, 'power');
-    updateToggleUI();
-    updateModeUI();
-  }
-
-  // Firebase listeners
-  onValue(ref(db, "/led/mode"), snap => { if (snap.exists()) { currentMode = snap.val().toUpperCase(); updateModeUI(); dbReadCount++; updateStatsDisplay(); } });
-  onValue(ref(db, "/led/on"), snap => { if (snap.exists()) { systemOn = snap.val(); updateToggleUI(); updateModeUI(); dbReadCount++; updateStatsDisplay(); } });
-  onValue(ref(db, "/led/heartbeat"), snap => {
-    if (snap.exists()) {
-      lastHeartbeat = Date.now();
-      if (!esp32Online) { esp32Online = true; updateConnectionUI(true); addActivityLog(`ESP32 HEARTBEAT DETECTED · Link quality: GOOD`, 'connection'); }
-      dbReadCount++;
-      updateStatsDisplay();
-      const lastSeenElem = $("last-seen-time");
-      if (lastSeenElem) lastSeenElem.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const MODE_SPEEDS = { LOW: "1.0 Hz", MEDIUM: "2.0 Hz", HIGH: "5.0 Hz" };
+  const MODE_DESCS = {
+    LOW: "🐢 Slow: LED blinks once per second (1000ms)",
+    MEDIUM: "⚡ Normal: LED blinks twice per second (500ms)", 
+    HIGH: "🔥 Fast: LED blinks five times per second (200ms)"
+  };
+  
+  // DOM Elements
+  const ledElement = document.getElementById("led");
+  const powerCheckbox = document.getElementById("power-toggle");
+  const currentModeSpan = document.getElementById("current-mode");
+  const currentSpeedSpan = document.getElementById("current-speed");
+  const modeDescriptionSpan = document.getElementById("mode-description");
+  const heartbeatTimeSpan = document.getElementById("heartbeat-time");
+  const statReadsSpan = document.getElementById("stat-reads");
+  const statWritesSpan = document.getElementById("stat-writes");
+  const connDot = document.getElementById("conn-dot");
+  const connText = document.getElementById("conn-text");
+  const eventLog = document.getElementById("event-log");
+  
+  // Helper: Firebase REST API calls
+  async function firebaseGet(path) {
+    try {
+      const url = `https://${FIREBASE_HOST}${path}.json?auth=${FIREBASE_AUTH}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        apiCallCount++;
+        updateStats();
+        return await response.json();
+      }
+    } catch (error) {
+      console.error("GET error:", error);
     }
+    return null;
+  }
+  
+  async function firebasePut(path, value) {
+    try {
+      const url = `https://${FIREBASE_HOST}${path}.json?auth=${FIREBASE_AUTH}`;
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value)
+      });
+      if (response.ok) {
+        commandCount++;
+        updateStats();
+        return true;
+      }
+    } catch (error) {
+      console.error("PUT error:", error);
+    }
+    return false;
+  }
+  
+  function addLog(message, type = "info") {
+    const entry = document.createElement("div");
+    entry.className = "log-entry";
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute:'2-digit', second:'2-digit' });
+    const icon = type === "mode" ? "🎛️" : type === "power" ? "⚡" : type === "connection" ? "🔌" : "📡";
+    entry.innerHTML = `<span class="log-time">${timeStr}</span><span class="log-message">${icon} ${escapeHtml(message)}</span>`;
+    eventLog.prepend(entry);
+    while (eventLog.children.length > 40) eventLog.removeChild(eventLog.lastChild);
+  }
+  
+  function escapeHtml(str) { 
+    return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); 
+  }
+  
+  function updateStats() {
+    statReadsSpan.textContent = apiCallCount.toLocaleString();
+    statWritesSpan.textContent = commandCount.toLocaleString();
+  }
+  
+  function updateConnection(online) {
+    if (online) {
+      connDot.className = "conn-dot online";
+      connText.innerHTML = '<i class="fas fa-link"></i> ESP32 Online';
+    } else {
+      connDot.className = "conn-dot offline";
+      connText.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ESP32 Offline';
+    }
+  }
+  
+  // Update dashboard LED based on ESP32's actual state
+  function updateLedFromESP32(state) {
+    if (state) {
+      ledElement.classList.add("active");
+    } else {
+      ledElement.classList.remove("active");
+    }
+  }
+  
+  function updateUI() {
+    currentModeSpan.textContent = currentMode;
+    currentSpeedSpan.textContent = MODE_SPEEDS[currentMode];
+    modeDescriptionSpan.textContent = MODE_DESCS[currentMode];
+    
+    const lowBtn = document.getElementById("mode-low");
+    const medBtn = document.getElementById("mode-medium");
+    const highBtn = document.getElementById("mode-high");
+    lowBtn.classList.remove("active");
+    medBtn.classList.remove("active");
+    highBtn.classList.remove("active");
+    if (currentMode === "LOW") lowBtn.classList.add("active");
+    else if (currentMode === "MEDIUM") medBtn.classList.add("active");
+    else highBtn.classList.add("active");
+  }
+  
+  function updatePower() {
+    powerCheckbox.checked = systemOn;
+    if (!systemOn) {
+      // If system is off, LED should be off
+      updateLedFromESP32(false);
+    }
+  }
+  
+  // Firebase write functions
+  window.setMode = async function(mode) {
+    if (!systemOn) { 
+      addLog("⚠️ Turn power ON first to change mode", "warning"); 
+      return; 
+    }
+    if (mode === currentMode) return;
+    
+    const success = await firebasePut("/led/mode", mode);
+    if (success) {
+      currentMode = mode;
+      updateUI();
+      addLog(`🎛️ Mode changed to ${mode} · ${MODE_SPEEDS[mode]}`, "mode");
+    } else {
+      addLog(`❌ Failed to change mode to ${mode}`, "warning");
+    }
+  };
+  
+  window.togglePower = async function() {
+    const newState = !systemOn;
+    const success = await firebasePut("/led/on", newState);
+    if (success) {
+      systemOn = newState;
+      updatePower();
+      addLog(systemOn ? "⚡ System activated · LED ready" : "💤 System deactivated · LED off", "power");
+      if (!systemOn) {
+        updateLedFromESP32(false);
+      }
+    } else {
+      addLog(`❌ Failed to toggle power`, "warning");
+    }
+  };
+  
+  window.manualSync = async function() {
+    addLog("🔄 Manual sync in progress...", "connection");
+    try {
+      const modeData = await firebaseGet("/led/mode");
+      const powerData = await firebaseGet("/led/on");
+      const stateData = await firebaseGet("/led/state");
+      
+      if (modeData && (modeData === "LOW" || modeData === "MEDIUM" || modeData === "HIGH")) {
+        if (modeData !== currentMode) {
+          currentMode = modeData;
+          updateUI();
+          addLog(`📡 Remote mode update: ${currentMode}`, "mode");
+        }
+      }
+      
+      if (powerData !== null && powerData !== undefined) {
+        const newPower = powerData === true;
+        if (newPower !== systemOn) {
+          systemOn = newPower;
+          updatePower();
+          addLog(systemOn ? "📡 Remote activation" : "📡 Remote shutdown", "power");
+        }
+      }
+      
+      // Sync LED state from ESP32
+      if (stateData !== null && stateData !== undefined) {
+        const newLedState = stateData === true;
+        if (newLedState !== actualLedState) {
+          actualLedState = newLedState;
+          updateLedFromESP32(actualLedState);
+          addLog(`💡 LED state synced: ${actualLedState ? "ON" : "OFF"}`, "connection");
+        }
+      }
+      
+      addLog(`✅ Sync complete · Mode: ${currentMode} · Power: ${systemOn ? "ON" : "OFF"}`, "connection");
+    } catch(e) { 
+      addLog(`❌ Sync failed: ${e.message}`, "warning"); 
+    }
+  };
+  
+  window.clearLog = function() { 
+    eventLog.innerHTML = ''; 
+    addLog("🧹 Event log cleared", "info"); 
+  };
+  
+  powerCheckbox.addEventListener("change", () => { 
+    if (powerCheckbox.checked !== systemOn) window.togglePower(); 
   });
-
+  
+  // Poll Firebase for changes - reads LED state from ESP32
+  async function pollFirebase() {
+    try {
+      const modeData = await firebaseGet("/led/mode");
+      const powerData = await firebaseGet("/led/on");
+      const heartbeatData = await firebaseGet("/led/heartbeat");
+      const stateData = await firebaseGet("/led/state");
+      
+      // Check mode
+      if (modeData && (modeData === "LOW" || modeData === "MEDIUM" || modeData === "HIGH")) {
+        if (modeData !== currentMode) {
+          currentMode = modeData;
+          updateUI();
+          addLog(`📡 Mode changed to ${currentMode}`, "mode");
+        }
+      }
+      
+      // Check power
+      if (powerData !== null && powerData !== undefined) {
+        const newPower = powerData === true;
+        if (newPower !== systemOn) {
+          systemOn = newPower;
+          updatePower();
+          addLog(systemOn ? "📡 System activated remotely" : "📡 System deactivated remotely", "power");
+        }
+      }
+      
+      // Check heartbeat
+      if (heartbeatData !== null) {
+        lastHeartbeat = Date.now();
+        if (!esp32Online) {
+          esp32Online = true;
+          updateConnection(true);
+          addLog("🔌 ESP32 connected · Heartbeat detected", "connection");
+        }
+        heartbeatTimeSpan.textContent = new Date().toLocaleTimeString('en-GB');
+      }
+      
+      // CRITICAL: Read LED state from ESP32 and update dashboard
+      if (stateData !== null && stateData !== undefined) {
+        const newLedState = stateData === true;
+        if (newLedState !== actualLedState) {
+          actualLedState = newLedState;
+          updateLedFromESP32(actualLedState);
+        }
+      }
+      
+    } catch (error) {
+      console.error("Poll error:", error);
+    }
+  }
+  
+  // Monitor connection status
   setInterval(() => {
     const secondsSince = (Date.now() - lastHeartbeat) / 1000;
     const online = lastHeartbeat > 0 && secondsSince < 12;
     if (online !== esp32Online) {
       esp32Online = online;
-      updateConnectionUI(online);
-      if (!online && lastHeartbeat !== 0) addActivityLog(`ESP32 TIMEOUT · No signal for ${Math.floor(secondsSince)}s`, 'error');
-      else if (online) addActivityLog(`ESP32 RECONNECTED · Link restored`, 'connection');
+      updateConnection(online);
+      if (!online && lastHeartbeat !== 0) {
+        addLog(`⚠️ Connection lost · No heartbeat for ${Math.floor(secondsSince)}s`, "warning");
+      } else if (online) {
+        addLog("🔌 ESP32 reconnected", "connection");
+      }
     }
-    if (esp32Online) uptimePercent = Math.min(99.99, uptimePercent + 0.002);
-    else uptimePercent = Math.max(91.5, uptimePercent - 0.015);
-    updateStatsDisplay();
-  }, 2000);
-
-  // LED Blink with realistic PWM simulation
-  function startBlink() {
-    if (blinkTimer) clearInterval(blinkTimer);
-    const led = $("led-orb");
-    if (!led) return;
-    if (!systemOn) { led.classList.remove("led-on"); led.classList.add("led-off"); return; }
-    const speed = BLINK_SPEEDS[currentMode];
-    blinkState = true;
-    led.classList.add("led-on"); led.classList.remove("led-off");
-    blinkTimer = setInterval(() => {
-      blinkState = !blinkState;
-      led.classList.toggle("led-on", blinkState);
-      led.classList.toggle("led-off", !blinkState);
-    }, speed);
-  }
-
-  // UI Updates - Industrial realistic styling
-  function updateModeUI() {
-    ["LOW","MEDIUM","HIGH"].forEach(m => {
-      const btn = $("btn-" + m);
-      if (!btn) return;
-      const active = m === currentMode && systemOn;
-      btn.classList.toggle("mode-active", active);
-      btn.classList.toggle("mode-inactive", !active);
-    });
-    const labels = { LOW:"SLOW (1Hz)", MEDIUM:"MEDIUM (2Hz)", HIGH:"FAST (5Hz)" };
-    const el = $("mode-label");
-    if (el) el.textContent = systemOn ? labels[currentMode] : "STANDBY · IDLE";
-    const modeTag = $("current-mode-tag");
-    if (modeTag) modeTag.textContent = systemOn ? currentMode : "OFFLINE";
-    const colors = { LOW:"#10b981", MEDIUM:"#f59e0b", HIGH:"#ef4444" };
-    const modeBar = $("mode-bar");
-    if (modeBar) modeBar.style.background = systemOn ? colors[currentMode] : "#4b5563";
-    const widths = { LOW:"33%", MEDIUM:"66%", HIGH:"100%" };
-    if (modeBar) modeBar.style.width = systemOn ? widths[currentMode] : "0%";
-    const intensityHint = $("intensity-hint");
-    if (intensityHint) intensityHint.textContent = systemOn ? (currentMode === "LOW" ? "LOW FREQ" : currentMode === "MEDIUM" ? "MED FREQ" : "HIGH FREQ") : "INACTIVE";
-    startBlink();
-  }
-
-  function updateToggleUI() {
-    const track = $("toggle-track");
-    const knob = $("toggle-knob");
-    const label = $("toggle-label");
-    if (!track || !knob || !label) return;
-    if (systemOn) {
-      track.classList.add("toggle-on"); track.classList.remove("toggle-off");
-      knob.classList.add("translate-x-7"); knob.classList.remove("translate-x-1");
-      label.innerHTML = '<i class="fas fa-check-circle mr-1"></i>ARMED';
-      label.style.color = "#10b981";
-    } else {
-      track.classList.remove("toggle-on"); track.classList.add("toggle-off");
-      knob.classList.remove("translate-x-7"); knob.classList.add("translate-x-1");
-      label.innerHTML = '<i class="fas fa-ban mr-1"></i>SAFE';
-      label.style.color = "#ef4444";
-    }
-  }
-
-  function updateConnectionUI(online) {
-    const dot = $("conn-dot");
-    const text = $("conn-text");
-    const badge = $("conn-badge");
-    if (!dot || !text || !badge) return;
-    if (online) {
-      dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]";
-      text.innerHTML = '<i class="fas fa-link mr-1"></i>LINK ESTABLISHED';
-      badge.className = "conn-badge online flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono font-bold tracking-wide";
-    } else {
-      dot.className = "w-2 h-2 rounded-full bg-red-500";
-      text.innerHTML = lastHeartbeat === 0 ? '<i class="fas fa-hourglass-half mr-1"></i>BOOT WAIT' : '<i class="fas fa-exclamation-triangle mr-1"></i>LOST CONNECTION';
-      badge.className = "conn-badge offline flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-mono font-bold tracking-wide";
-    }
-  }
+  }, 3000);
   
-  function updateStatsDisplay() {
-    const readsSpan = $("stat-reads"); if (readsSpan) readsSpan.textContent = Math.floor(dbReadCount).toLocaleString();
-    const writesSpan = $("stat-updates"); if (writesSpan) writesSpan.textContent = writeCount.toLocaleString();
-    const uptimeSpan = $("stat-uptime"); if (uptimeSpan) uptimeSpan.textContent = uptimePercent.toFixed(1);
-    const rxRate = $("rx-rate"); if (rxRate) rxRate.textContent = (dbReadCount / ((Date.now() - window._startTime || 1) / 1000)).toFixed(1);
-    const txRate = $("tx-rate"); if (txRate) txRate.textContent = (writeCount / ((Date.now() - window._startTime || 1) / 1000)).toFixed(1);
-  }
-  window._startTime = Date.now();
-
-  // Real-time system clock (industrial)
-  function updateSystemClock() {
-    const clockEl = $("sys-clock");
-    if (!clockEl) return;
-    const now = new Date();
-    clockEl.textContent = now.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const dateEl = $("sys-date");
-    if (dateEl) dateEl.textContent = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  }
-  setInterval(updateSystemClock, 500);
+  // Start polling every second (matching ESP32 POLL_INTERVAL)
+  setInterval(pollFirebase, 1000);
   
-  window.toggleDark = function() {
-    document.documentElement.classList.toggle("dark");
-    addActivityLog(`UI THEME: ${document.documentElement.classList.contains("dark") ? 'DARK PANEL' : 'LIGHT PANEL'}`, 'info');
-  };
-  window.clearLog = function() { const log = $("activity-log"); if (log) { log.innerHTML = ''; addActivityLog('TERMINAL CLEARED · Log buffer reset', 'info'); } };
-  window.forceSync = async function() {
-    addActivityLog('MANUAL SYNC INITIATED · Fetching remote state', 'connection');
-    try {
-      const modeSnap = await get(ref(db, "/led/mode"));
-      const onSnap = await get(ref(db, "/led/on"));
-      if (modeSnap.exists()) currentMode = modeSnap.val().toUpperCase();
-      if (onSnap.exists()) systemOn = onSnap.val();
-      updateModeUI(); updateToggleUI();
-      addActivityLog(`SYNC COMPLETE · Mode:${currentMode} | Power:${systemOn ? 'ON' : 'OFF'}`, 'connection');
-    } catch(e) { addActivityLog(`SYNC FAULT: ${e.message}`, 'error'); }
-  };
-  window.setMode = setMode;
-  window.toggleSys = toggleSystem;
-
-  // LED hardware simulation: intensity gauge
-  function animateNumber(id, from, to, duration, suffix = '') {
-    const el = $(id); if (!el) return;
-    const start = performance.now();
-    const tick = now => { const p = Math.min((now - start) / duration, 1); const val = Math.floor(from + (to - from) * (1 - Math.pow(1 - p, 3))); el.textContent = val + suffix; if (p < 1) requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
-  }
+  // Initial setup
+  updateUI();
+  updatePower();
+  addLog("✨ LUMINA controller ready · ESP32 LED system online", "info");
+  addLog("📡 Using Firebase REST API - Dashboard syncs with ESP32 LED state", "info");
+  addLog("💡 Dashboard LED will match ESP32's actual blinking", "info");
   
-  window.addEventListener("DOMContentLoaded", () => {
-    updateModeUI(); updateToggleUI(); updateConnectionUI(false); updateStatsDisplay();
-    animateNumber("stat-reads", 0, 1247, 1500, '');
-    animateNumber("stat-updates", 0, 89, 1300, '');
-    animateNumber("stat-uptime", 0, 99.2, 1500, '%');
-    addActivityLog('SYSTEM BOOT · NeoLED Industrial Console v3.0', 'info');
-    addActivityLog('FIREBASE BRIDGE ACTIVE · RTDB stream ready', 'connection');
-    addActivityLog('AWAITING ESP32 HANDSHAKE · Heartbeat protocol', 'connection');
-    updateSystemClock();
-    // ripple effect for buttons
-    document.querySelectorAll(".mode-btn, .action-btn").forEach(btn => {
-      btn.addEventListener("click", e => {
-        const ripple = document.createElement("span");
-        ripple.className = "ripple-effect";
-        const rect = btn.getBoundingClientRect();
-        ripple.style.left = (e.clientX - rect.left) + "px";
-        ripple.style.top = (e.clientY - rect.top) + "px";
-        btn.appendChild(ripple);
-        setTimeout(() => ripple.remove(), 400);
-      });
-    });
-    // simulate live RX/TX counters
-    setInterval(() => { if (esp32Online) { dbReadCount += Math.floor(Math.random() * 3); updateStatsDisplay(); } }, 4000);
-  });
+  // Initial sync
+  setTimeout(() => {
+    manualSync();
+  }, 500);
 </script>
-<style>
-  /* INDUSTRIAL REALISTIC DESIGN - Control Room Aesthetic */
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
-  
-  :root {
-    --industrial-bg: #0c0f1c;
-    --industrial-panel: #0a0d18;
-    --industrial-surface: #11151f;
-    --industrial-border: #1e2a3a;
-    --industrial-accent: #2dd4bf;
-    --industrial-glow: rgba(45,212,191,0.3);
-    --industrial-text: #e2e8f0;
-    --industrial-muted: #7f8ea3;
-  }
-  
-  html.dark {
-    --industrial-bg: #070b12;
-    --industrial-panel: #0a0f18;
-    --industrial-surface: #0f1622;
-    --industrial-border: #1f2a3c;
-    --industrial-text: #edf2f7;
-  }
-  
-  html:not(.dark) {
-    --industrial-bg: #d1dbe8;
-    --industrial-panel: #eef2f9;
-    --industrial-surface: #ffffff;
-    --industrial-border: #cbd5e1;
-    --industrial-text: #0f172a;
-    --industrial-muted: #475569;
-  }
-  
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  
-  body {
-    font-family: 'JetBrains Mono', 'Inter', monospace;
-    background: var(--industrial-bg);
-    color: var(--industrial-text);
-    min-height: 100vh;
-    position: relative;
-  }
-  
-  /* Industrial grid overlay */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: 
-      repeating-linear-gradient(0deg, rgba(45,212,191,0.03) 0px, rgba(45,212,191,0.03) 1px, transparent 1px, transparent 2px),
-      repeating-linear-gradient(90deg, rgba(45,212,191,0.03) 0px, rgba(45,212,191,0.03) 1px, transparent 1px, transparent 2px);
-    background-size: 20px 20px;
-    pointer-events: none;
-    z-index: 0;
-  }
-  
-  /* Screw/rivet effect */
-  .panel-screw {
-    width: 8px;
-    height: 8px;
-    background: radial-gradient(circle at 30% 30%, #5a6e8a, #1e2a3a);
-    border-radius: 50%;
-    position: absolute;
-    box-shadow: inset -1px -1px 0 rgba(0,0,0,0.5), inset 1px 1px 0 rgba(255,255,255,0.1);
-  }
-  
-  .glass-panel {
-    background: rgba(10, 13, 24, 0.75);
-    backdrop-filter: blur(4px);
-    border: 1px solid var(--industrial-border);
-    border-radius: 16px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-  }
-  
-  html:not(.dark) .glass-panel {
-    background: rgba(255,255,255,0.85);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-  }
-  
-  /* LED Orb - Realistic industrial LED */
-  #led-orb {
-    width: 110px;
-    height: 110px;
-    border-radius: 50%;
-    transition: all 0.05s linear;
-    margin: 0 auto;
-    position: relative;
-    background: radial-gradient(circle at 40% 40%, #2d3e50, #0a0f1a);
-    box-shadow: inset 0 2px 6px rgba(0,0,0,0.6), 0 2px 4px rgba(255,255,255,0.05);
-  }
-  
-  #led-orb.led-on {
-    background: radial-gradient(circle at 35% 35%, #facc15, #dc2626 70%, #7f1a1a);
-    box-shadow: 0 0 20px 6px rgba(239,68,68,0.6), 0 0 40px 12px rgba(239,68,68,0.3), inset 0 1px 4px rgba(255,255,200,0.6);
-  }
-  
-  #led-orb.led-off {
-    background: radial-gradient(circle at 40% 40%, #1e293b, #030712);
-    box-shadow: inset 0 2px 8px rgba(0,0,0,0.8), 0 0 2px rgba(255,255,255,0.1);
-  }
-  
-  /* Mode Buttons - Industrial toggle style */
-  .mode-btn {
-    position: relative;
-    background: var(--industrial-surface);
-    border: 1px solid var(--industrial-border);
-    border-radius: 8px;
-    padding: 0.85rem 0.5rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 600;
-    font-size: 0.75rem;
-    letter-spacing: 1px;
-    cursor: pointer;
-    transition: all 0.1s ease;
-    text-transform: uppercase;
-    color: var(--industrial-muted);
-  }
-  
-  .mode-active {
-    background: linear-gradient(135deg, #1e2a3a, #0f172a);
-    border-left: 3px solid #2dd4bf;
-    color: #2dd4bf;
-    text-shadow: 0 0 4px rgba(45,212,191,0.5);
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.3), 0 2px 4px rgba(0,0,0,0.2);
-  }
-  
-  .mode-inactive {
-    opacity: 0.7;
-    filter: grayscale(0.2);
-  }
-  
-  .mode-btn:hover:not(.mode-active) {
-    border-color: #2dd4bf;
-    opacity: 0.9;
-  }
-  
-  /* Toggle - Industrial switch */
-  .toggle-on { background: linear-gradient(135deg, #0f172a, #1e293b); border: 1px solid #2dd4bf; box-shadow: 0 0 6px #2dd4bf; }
-  .toggle-off { background: #1a1f2e; border: 1px solid #334155; }
-  
-  /* Connection badge - Realistic */
-  .conn-badge.online { background: rgba(16,185,129,0.15); border-left: 3px solid #10b981; color: #6ee7b7; font-family: monospace; }
-  .conn-badge.offline { background: rgba(239,68,68,0.1); border-left: 3px solid #ef4444; color: #f87171; }
-  
-  /* Stat Cards - Industrial meters */
-  .stat-card {
-    background: var(--industrial-surface);
-    border: 1px solid var(--industrial-border);
-    border-radius: 12px;
-    transition: all 0.2s;
-    position: relative;
-    overflow: hidden;
-  }
-  .stat-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 3px;
-    height: 100%;
-    background: #2dd4bf;
-    opacity: 0.6;
-  }
-  .stat-num {
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 700;
-    font-size: 1.8rem;
-    letter-spacing: 2px;
-    color: #2dd4bf;
-  }
-  
-  /* Activity Log - Terminal style */
-  #activity-log {
-    max-height: 220px;
-    overflow-y: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    background: rgba(0,0,0,0.3);
-    border-radius: 8px;
-    padding: 8px 4px;
-  }
-  .log-entry {
-    border-bottom: 1px solid rgba(45,212,191,0.1);
-    font-family: monospace;
-  }
-  
-  /* Ripple industrial */
-  .ripple-effect {
-    position: absolute;
-    border-radius: 50%;
-    background: rgba(45,212,191,0.3);
-    transform: scale(0);
-    animation: ripplePop 0.5s linear forwards;
-    pointer-events: none;
-  }
-  @keyframes ripplePop { to { transform: scale(20); opacity: 0; } }
-  
-  /* Scan line effect */
-  @keyframes industrialScan {
-    0% { transform: translateY(-120%); opacity: 0; }
-    20% { opacity: 0.6; }
-    80% { opacity: 0.6; }
-    100% { transform: translateY(120%); opacity: 0; }
-  }
-  .scan-line {
-    position: absolute;
-    width: 100%;
-    height: 3px;
-    background: linear-gradient(90deg, transparent, #2dd4bf, #2dd4bf, transparent);
-    animation: industrialScan 2.8s cubic-bezier(0.4,0,0.2,1) infinite;
-    border-radius: 2px;
-  }
-  
-  /* Industrial gauge */
-  #mode-bar {
-    height: 3px;
-    transition: width 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
-    box-shadow: 0 0 4px currentColor;
-  }
-  
-  /* Clock panel */
-  .digital-clock {
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: 2px;
-    background: #00000030;
-    padding: 4px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--industrial-border);
-  }
-  
-  /* Realistic button glow */
-  button:active { transform: scale(0.98); }
-  
-  /* Scrollbar industrial */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb { background: #2dd4bf; border-radius: 4px; }
-  
-  .fade-up { animation: fadeIn 0.4s ease forwards; opacity: 0; animation-fill-mode: forwards; }
-  @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } from { opacity: 0; transform: translateY(12px); } }
-  .fade-up-1 { animation-delay: 0.05s; }
-  .fade-up-2 { animation-delay: 0.12s; }
-  .fade-up-3 { animation-delay: 0.2s; }
-  .fade-up-4 { animation-delay: 0.28s; }
-</style>
-</head>
-<body class="dark">
-
-<div class="relative z-10 max-w-7xl mx-auto px-4 py-5">
-  <!-- Header - Industrial Control Panel Header -->
-  <header class="mb-6 fade-up">
-    <div class="glass-panel px-5 py-3 flex flex-wrap items-center justify-between gap-3 relative">
-      <div class="flex items-center gap-3">
-        <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-        <div>
-          <h1 class="text-xl font-bold tracking-wider" style="font-family:'JetBrains Mono'"><span class="text-teal-400">NEO</span><span class="text-white">LED</span> <span class="text-xs text-gray-500 font-mono">v3.0 · INDUSTRIAL</span></h1>
-          <p class="text-[10px] font-mono text-teal-400/70"><i class="fas fa-microchip mr-1"></i>ESP32-S3 | Firebase RTDB | REAL-TIME</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-3">
-        <div class="digital-clock text-xs flex gap-3">
-          <span><i class="far fa-calendar-alt mr-1"></i><span id="sys-date">---</span></span>
-          <span><i class="far fa-clock mr-1"></i><span id="sys-clock">--:--:--</span></span>
-        </div>
-        <div id="conn-badge" class="conn-badge offline flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-mono">
-          <span id="conn-dot" class="w-2 h-2 rounded-full bg-red-500"></span>
-          <span id="conn-text"><i class="fas fa-hourglass-half mr-1"></i>BOOT</span>
-        </div>
-        <button onclick="toggleDark()" class="w-8 h-8 rounded-md glass-panel hover:border-teal-400 transition-all text-sm"><i class="fas fa-adjust"></i></button>
-      </div>
-      <div class="panel-screw" style="top: 8px; left: 12px;"></div>
-      <div class="panel-screw" style="bottom: 8px; right: 12px;"></div>
-    </div>
-  </header>
-
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-    <!-- LEFT: LED MONITOR -->
-    <div class="fade-up fade-up-1">
-      <div class="glass-panel p-6 h-full flex flex-col items-center gap-5 relative">
-        <div class="text-center">
-          <div class="text-[10px] font-mono text-teal-400/80 tracking-wider"><i class="fas fa-led"></i> GPIO 2 · PWM DRIVER</div>
-          <div class="text-sm font-bold mt-1">HIGH-POWER LED MODULE</div>
-        </div>
-        <div class="relative">
-          <div id="led-orb" class="led-off"><div class="scan-line"></div></div>
-          <div class="absolute inset-0 rounded-full border border-teal-400/20 -m-3"></div>
-        </div>
-        <div class="text-center space-y-1">
-          <div class="inline-block px-3 py-0.5 rounded-full bg-teal-400/10 border border-teal-400/30 text-teal-300 text-xs font-mono"><span id="current-mode-tag">LOW</span> MODE</div>
-          <p id="mode-label" class="text-xs font-mono text-gray-400 mt-2">SLOW (1Hz)</p>
-        </div>
-        <div class="w-full mt-2">
-          <div class="flex justify-between text-[10px] font-mono mb-1"><span>DRIVER INTENSITY</span><span id="intensity-hint" class="text-teal-400">LOW FREQ</span></div>
-          <div class="w-full h-1 bg-gray-800 rounded-full overflow-hidden"><div id="mode-bar" style="width:33%; background:#10b981;" class="h-full rounded-full"></div></div>
-        </div>
-        <div class="flex items-center gap-4 mt-3 w-full justify-center">
-          <span class="text-[10px] font-mono text-gray-500">MASTER RELAY</span>
-          <button onclick="toggleSys()" class="relative">
-            <div id="toggle-track" class="toggle-on w-14 h-7 rounded-full transition-all"><div id="toggle-knob" class="translate-x-7 absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all"></div></div>
-          </button>
-          <span id="toggle-label" class="text-xs font-mono font-bold text-emerald-400"><i class="fas fa-check-circle mr-1"></i>ARMED</span>
-        </div>
-        <div class="w-full text-[9px] text-gray-500 text-center border-t border-gray-800 pt-3 mt-2"><i class="far fa-clock mr-1"></i>LAST HEARTBEAT: <span id="last-seen-time" class="text-teal-400 font-mono">---</span></div>
-      </div>
-    </div>
-
-    <!-- RIGHT: CONTROL CONSOLE -->
-    <div class="lg:col-span-2 flex flex-col gap-5">
-      <!-- FREQUENCY SELECTOR -->
-      <div class="glass-panel p-5 fade-up fade-up-2">
-        <div class="flex justify-between items-center mb-4">
-          <div><h2 class="text-sm font-bold font-mono tracking-wider"><i class="fas fa-sliders-h mr-2 text-teal-400"></i>PULSE GENERATOR</h2><p class="text-[10px] text-gray-500">SELECT BLINK FREQUENCY</p></div>
-          <button onclick="forceSync()" class="action-btn text-[10px] px-3 py-1.5 rounded-md bg-gray-800 hover:border-teal-400 border border-gray-700 transition font-mono"><i class="fas fa-sync-alt mr-1"></i> SYNC</button>
-        </div>
-        <div class="grid grid-cols-3 gap-3">
-          <button id="btn-LOW" class="mode-btn mode-inactive" onclick="setMode('LOW')"><i class="fas fa-tachometer-alt text-lg mb-1 block"></i><div class="text-xs">LOW</div><div class="text-[9px] opacity-60">1.0 Hz</div></button>
-          <button id="btn-MEDIUM" class="mode-btn mode-inactive" onclick="setMode('MEDIUM')"><i class="fas fa-waveform text-lg mb-1 block"></i><div class="text-xs">MEDIUM</div><div class="text-[9px] opacity-60">2.0 Hz</div></button>
-          <button id="btn-HIGH" class="mode-btn mode-inactive" onclick="setMode('HIGH')"><i class="fas fa-bolt text-lg mb-1 block"></i><div class="text-xs">HIGH</div><div class="text-[9px] opacity-60">5.0 Hz</div></button>
-        </div>
-      </div>
-      
-      <!-- METRICS PANEL -->
-      <div class="grid grid-cols-3 gap-3 fade-up fade-up-3">
-        <div class="stat-card p-3 text-center"><i class="fas fa-database text-teal-400/70 text-sm mb-1"></i><div class="stat-num text-2xl"><span id="stat-reads">0</span></div><div class="text-[9px] font-mono tracking-wider">DATABASE READS</div><div class="text-[8px] text-gray-500 mt-1"><i class="fas fa-chart-line"></i> <span id="rx-rate">0</span>/s</div></div>
-        <div class="stat-card p-3 text-center"><i class="fas fa-upload text-teal-400/70 text-sm mb-1"></i><div class="stat-num text-2xl"><span id="stat-updates">0</span></div><div class="text-[9px] font-mono tracking-wider">COMMANDS SENT</div><div class="text-[8px] text-gray-500 mt-1"><i class="fas fa-tachometer-alt"></i> <span id="tx-rate">0</span>/s</div></div>
-        <div class="stat-card p-3 text-center"><i class="fas fa-chart-simple text-teal-400/70 text-sm mb-1"></i><div class="stat-num text-2xl"><span id="stat-uptime">0</span><span>%</span></div><div class="text-[9px] font-mono tracking-wider">SYSTEM UPTIME</div><div class="text-[8px] text-gray-500">ESP32 SLA</div></div>
-      </div>
-      
-      <!-- TERMINAL LOG (timestamp visible) -->
-      <div class="glass-panel p-5 fade-up fade-up-4">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-xs font-mono font-bold tracking-wider"><i class="fas fa-terminal mr-2 text-teal-400"></i>EVENT LOG · TIMESTAMPED</h3>
-          <button onclick="clearLog()" class="text-[9px] px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 transition"><i class="fas fa-eraser mr-1"></i>CLEAR</button>
-        </div>
-        <div id="activity-log" class="space-y-1 min-h-[180px]"></div>
-      </div>
-      
-      <!-- RTDB SCHEMA REFERENCE (industrial data sheet) -->
-      <div class="glass-panel p-3 fade-up">
-        <div class="flex items-center gap-2 text-[10px] font-mono text-teal-400/60"><i class="fas fa-database"></i> FIREBASE STRUCTURE · <span class="text-gray-500">/led/{mode, on, heartbeat}</span></div>
-      </div>
-    </div>
-  </div>
-  <footer class="mt-6 text-center text-[9px] font-mono text-gray-600 border-t border-gray-800/50 pt-4">NeoLED INDUSTRIAL CONSOLE · ESP32 REAL-TIME CONTROL SYSTEM · RTDB ACTIVE</footer>
-</div>
 </body>
 </html>
-```
